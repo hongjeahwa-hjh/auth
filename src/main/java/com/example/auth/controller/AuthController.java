@@ -1,11 +1,10 @@
 package com.example.auth.controller;
 
 
-import com.example.auth.dto.ApiResponse;
-import com.example.auth.dto.LoginResponse;
-import com.example.auth.dto.RequestLogin;
-import com.example.auth.dto.RequestSignup;
+import com.example.auth.dto.*;
 import com.example.auth.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
@@ -78,7 +77,34 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<?> login (@Valid @RequestBody RequestLogin requestLogin){
         ApiResponse<?> response = authService.login(requestLogin);
-        HttpStatusCode statusCode = response.getSuccess() ? HttpStatus.CREATED :HttpStatus.BAD_REQUEST;
+        HttpStatusCode statusCode = response.getSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
         return ResponseEntity.status(statusCode).body(response);
     }
+
+    public String extractRefreshTokenFromBody (TokenRefreshRequest body){
+        if(body == null || body.getRefreshToken() == null || body.getRefreshToken().isBlank())
+            return null;
+
+        return body.getRefreshToken();
+    }
+
+
+    @PostMapping("/refresh")
+    @SuppressWarnings("NullableProblems")
+    public ResponseEntity<ApiResponse<TokenRefreshResponse>> refresh(
+            HttpServletRequest request,         // web 용
+            @RequestBody(required = false) @Valid TokenRefreshRequest body  // mobile
+    ){
+        String refreshToken = extractRefreshTokenFromBody( body );
+        TokenRefreshResponse tokenRefreshResponse = authService.refreshAccessToken(refreshToken);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Access Token 재발급 성공", tokenRefreshResponse)
+        );
+
+    }
+
+
+
+
 }

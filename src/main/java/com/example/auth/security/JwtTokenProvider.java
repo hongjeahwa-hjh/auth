@@ -94,7 +94,7 @@ public class  JwtTokenProvider {
     /**
      * 토큰 검증, 토큰 분석시에 예외(exception)이 발생하면 유효하지 않음
      * @param token
-     * @return token이 유효하면 true, 아니면 false를 반
+     * @return token이 유효하면 true, 아니면 false를 반환
      * */
     public boolean validateToken(String token) {
         try{

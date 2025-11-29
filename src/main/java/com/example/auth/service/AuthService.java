@@ -1,11 +1,10 @@
 package com.example.auth.service;
 
-import com.example.auth.dto.ApiResponse;
-import com.example.auth.dto.LoginResponse;
-import com.example.auth.dto.RequestLogin;
-import com.example.auth.dto.RequestSignup;
+import com.example.auth.dto.*;
 import com.example.auth.entity.RefreshToken;
 import com.example.auth.entity.User;
+import com.example.auth.exception.AccountException;
+import com.example.auth.exception.TokenException;
 import com.example.auth.repository.RefreshTokenRepository;
 import com.example.auth.repository.UserRepository;
 import com.example.auth.security.JwtTokenProvider;
@@ -27,7 +26,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider jwtTokenProvider;
+    private final JwtTokenProvider jwtTokenProvider;        // token발급기이자 검증기
 
     /**
      * 회원 가입 요청을 처리하는 서비스 메서드입니다.
@@ -48,6 +47,8 @@ public class AuthService {
     public ApiResponse<Void> signup(RequestSignup requestSignup) {
         // 이메일 정규화(Normalize)
         String email = requestSignup.getEmail().trim().toLowerCase();
+
+        log.info("request email : {}", email);
 
         try {
             // requestSignup정보를 기반으로 User Entity 인스턴스를 생성
@@ -152,4 +153,46 @@ public class AuthService {
         return ApiResponse.error(message);
     }
 
+    public TokenRefreshResponse refreshAccessToken(String refreshToken) {
+        // 1. refresh token 검증하기
+        if( !jwtTokenProvider.validateToken(refreshToken) ){
+            throw new TokenException("유효하지 않은 RefreshToken입니다.");
+        }
+
+        // 2. Refresh Token으로부터 이메일 추출하기
+        String email = jwtTokenProvider.getEmailFromToken(refreshToken);
+
+        // 3. DB에 해당 사용자가 존재하는지, 해당 refresh token이 존재하는지 확인
+        RefreshToken tokenEntity = refreshTokenRepository.findByToken(refreshToken).orElseThrow(() -> {
+                    return new TokenException("유효하지 않은 Refresh Token입니다.");
+        });
+
+        // 4. refresh token이 만료되었는지 확인
+        if(tokenEntity.getExpiresAt().isBefore((LocalDateTime.now()))){
+            throw new TokenException("Refresh Token이 만료되었습니다.");
+        }
+
+        // 5. 사용자 조회
+        User user = tokenEntity.getUser();
+        if (user == null || !user.getIsActive()){
+            throw new AccountException("비활성화된 사용자입니다.");
+        }
+
+        // 6. email 아이디 체크하기
+        if(!user.getEmail().equals(email)){
+            throw new AccountException("잘못된 사용자입니다.");
+        }
+
+        // 통과!
+        String newAccessToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
+        // 토큰 응답 객체를 생성
+        TokenRefreshResponse response = new TokenRefreshResponse();
+        // 새로 발급받은 Access Token
+        response.setAccessToken(newAccessToken);
+        // Access Token 발급을 위해 사용된 Refresh Token
+        response.setRefreshToken(refreshToken);
+
+        return response;
+
+    }
 }
