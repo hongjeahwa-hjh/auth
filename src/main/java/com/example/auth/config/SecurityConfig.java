@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -21,21 +23,35 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    /**
+     * Spring Security의 표준 인증 관리자
+     * 사용자의 인증을 처리하는 객체
+     * UserDetailsService를 이용하여 사용자 정보를 로드한다
+     * PasswordEncoder도 사용한다.
+     * UserDetails를 확인하여 계정상태(활성화)를 확인한다.
+     * */
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config)  throws Exception{
+        return config.getAuthenticationManager();
+    }
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http){
         http
-                .csrf(AbstractHttpConfigurer::disable)
+                .cors(AbstractHttpConfigurer::disable)      // cors check disable
+                .csrf(AbstractHttpConfigurer::disable)      // csrf check disable
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests( auth ->
                         auth
-                                .requestMatchers("/health", "/signup","/login","/refresh").permitAll()      // 여기에 적힌 route를 통과시킴
+                                .requestMatchers("/health", "/signup","/login","/refresh","/loginex").permitAll()      // 여기에 적힌 route를 통과시킴
                                 .anyRequest().authenticated()   // 그 외는 다 인증 필요
                 )
                 .exceptionHandling(ex ->

@@ -17,7 +17,7 @@ public class ApiResponse<T> {
         return new ApiResponse<>(true, message, null);
     }
 
-    // 데이터가 없는 성공 응답
+    // 데이터가 있는 성공 응답
     public static <T> ApiResponse<T> success(String message, T data){
         return new ApiResponse<>(true, message, data);
     }

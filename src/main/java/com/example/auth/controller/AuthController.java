@@ -3,6 +3,7 @@ package com.example.auth.controller;
 
 import com.example.auth.dto.*;
 import com.example.auth.service.AuthService;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -76,9 +77,44 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ResponseEntity<?> login (@Valid @RequestBody RequestLogin requestLogin){
-        ApiResponse<?> response = authService.login(requestLogin);
-        HttpStatusCode statusCode = response.getSuccess() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
-        return ResponseEntity.status(statusCode).body(response);
+        LoginResponse response = authService.login(requestLogin);
+
+        if (!(response.getAccessToken().isEmpty())) {
+            return ResponseEntity.status(HttpStatus.OK).body(
+              ApiResponse.success("로그인 성공", response)
+            );
+        } else {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    ApiResponse.error("로그인 실패")
+            );
+        }
+    }
+
+    @PostMapping("/loginex")
+    public ResponseEntity<?> loginEx (
+            @Valid @RequestBody RequestLogin requestLogin,
+            HttpServletRequest request,
+            HttpServletResponse httpResponse
+    ){
+        LoginResponse response = authService.loginEx(requestLogin);
+
+        if (!(response.getAccessToken().isEmpty())) {
+            Cookie refreshTokenCookie = new Cookie ("refreshToken", response.getRefreshToken());
+            refreshTokenCookie.setHttpOnly(true);   // XSS 공격에 대응, JS
+            refreshTokenCookie.setSecure(false);    // 개발기간만 false, https를 적용하면 true
+            refreshTokenCookie.setPath("/");        // 모든 경로에 쿠키 전송
+            httpResponse.addCookie(refreshTokenCookie);
+            // LoginResponse 인스턴스에 있는 refresh Token 정보를 삭제한다.
+            response.setRefreshToken(null);
+
+            return ResponseEntity.status(HttpStatus.OK).body(
+                    ApiResponse.success("로그인 성공", response)
+            );
+        } else {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    ApiResponse.error("로그인 실패")
+            );
+        }
     }
 
     public String extractRefreshTokenFromBody (TokenRefreshRequest body){

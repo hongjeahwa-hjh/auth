@@ -4,13 +4,19 @@ import com.example.auth.dto.*;
 import com.example.auth.entity.RefreshToken;
 import com.example.auth.entity.User;
 import com.example.auth.exception.AccountException;
+import com.example.auth.exception.InvalidCredentialException;
 import com.example.auth.exception.TokenException;
 import com.example.auth.repository.RefreshTokenRepository;
 import com.example.auth.repository.UserRepository;
+import com.example.auth.security.CustomUserDetails;
 import com.example.auth.security.JwtTokenProvider;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +33,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;        // token발급기이자 검증기
+    private final AuthenticationManager authenticationManager;
 
     /**
      * 회원 가입 요청을 처리하는 서비스 메서드입니다.
@@ -96,7 +103,7 @@ public class AuthService {
      *         </ul>
      */
     @Transactional
-    public ApiResponse<?> login(RequestLogin requestLogin){
+    public LoginResponse login(RequestLogin requestLogin){
         String normalizeEmail = requestLogin.getEmail().trim().toLowerCase();
         // 이메일로 사용자 조회
         Optional<User> optUser = userRepository.findByEmail(normalizeEmail);
@@ -105,21 +112,44 @@ public class AuthService {
             user = optUser.get();
         if (user == null){
             // 존재하지 않는 이메일이면 에러변환 후 종료
-            return createErrorResponse("존재하지 않는 사용자 이메일입니다");
+            throw new InvalidCredentialException("존재하지 않는 사용자 입니다");
         }
         // 비밀번호 체크하기
         boolean isValid = passwordEncoder.matches(
                 requestLogin.getPassword(), user.getPassword()
         );
         if( !isValid ) {
-            return createErrorResponse("비밀번호가 일치하지 않습니다");
+            throw  new InvalidCredentialException("비밀번호가 일치하지 않습니다");
         }
 
         // 계정 상태 확인하기
         if(!user.getIsActive()) {
-            return createErrorResponse("현재 비활성화된 계정입니다");
+            throw new AccountException("비활성화된 계정입니다");
         }
 
+        return createLoginResponse(user);
+    }
+
+    @Transactional
+    public LoginResponse loginEx(@Valid RequestLogin requestLogin) {
+        String email = requestLogin.getEmail().trim().toLowerCase();
+
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(email, requestLogin.getPassword())
+            );
+        } catch (RuntimeException ex){
+            throw ex;
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        User user = userDetails.getUser();
+
+        return createLoginResponse(user);
+    }
+
+    private LoginResponse createLoginResponse(User user){
         // 토큰을 생성
         String accessToken = jwtTokenProvider.generateAccessToken(user.getEmail(), user.getId());
         String refreshToken = jwtTokenProvider.generateRefreshToken(user.getEmail());
@@ -136,7 +166,7 @@ public class AuthService {
 
         refreshTokenRepository.save(refreshTokenEntity);
 
-        LoginResponse loginResponse = LoginResponse.builder()
+       return LoginResponse.builder()
                 .id(user.getId())
                 .email(user.getEmail())
                 .username(user.getNickName())
@@ -144,10 +174,11 @@ public class AuthService {
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .build();
-
-        return ApiResponse.success("로그인 성공", loginResponse);
-
     }
+
+
+
+
 
     private ApiResponse<Void> createErrorResponse(String message){
         return ApiResponse.error(message);
@@ -193,6 +224,5 @@ public class AuthService {
         response.setRefreshToken(refreshToken);
 
         return response;
-
     }
 }
